@@ -1,0 +1,468 @@
+#Module1
+ main.tf
+ terraform {
+  required_providers {
+   azurerm = {
+       source = "hashicorp/azurerm"
+        version = "3.49.0"
+    }
+  }
+}
+provider "azurerm" {
+    features {
+      
+    }
+    subscription_id = var.subscription_id
+    client_id = var.client_id
+    client_secret = var.client_secret
+    tenant_id = var.tenant_id
+
+}
+resource "azurerm_resource_group" "azlabelrg301" {
+    name = "azrgus3011"
+    location = "East US"
+    tags = {
+      "name" = "azure resourcegroup-eastus"
+    }
+  
+}
+resource "azurerm_virtual_network" "azlabelvnet301" {
+    name = "azvnetus301"
+    resource_group_name = azurerm_resource_group.azlabelrg301.name
+    location = azurerm_resource_group.azlabelrg301.location
+    address_space = [ "10.60.0.0/16" ]
+
+}
+
+#Variables.tf
+variable "subscription_id" {
+    type = string
+    default = "****"
+    description = "prod subscription"
+  
+}
+variable "client_id" {
+    type = string
+    default = "****"
+    description = "prod client_id"
+  
+}
+variable "client_secret" {
+    type = string
+    default = "***"
+    description = "prod client_secret"
+  
+}
+variable "tenant_id" {
+    type = string
+    default = "******"
+    description = "prod tenant_id"
+
+  
+}
+variable "vm_name_pfx" {
+    type = string
+    default = "dev-vm-"
+    description = "vm name prefix"
+  
+}
+variable "vm_count" {
+    type = string
+    default = "2"
+    description = "vm count"
+  
+}
+
+#Webservers.tf
+resource "azurerm_subnet" "azlabelwebsubnet301" {
+    name = "websubnet"
+    resource_group_name = azurerm_resource_group.azlabelrg301.name
+    virtual_network_name = azurerm_virtual_network.azlabelvnet301.name
+    address_prefixes = [ "10.60.1.0/24" ]
+  
+}
+resource "azurerm_public_ip" "azlabelwebpublicip401" {
+    count = var.vm_count
+    name = "${var.vm_name_pfx}-${count.index}-web"
+    resource_group_name = azurerm_resource_group.azlabelrg301.name                          
+    location = azurerm_resource_group.azlabelrg301.location
+    allocation_method = "Static"
+   
+}
+resource "azurerm_network_interface" "azlabelwebnic401" {
+    count = var.vm_count
+    name = "${var.vm_name_pfx}-${count.index}-nic"
+    resource_group_name = azurerm_resource_group.azlabelrg301.name
+    location = azurerm_resource_group.azlabelrg301.location
+    ip_configuration {
+      name = "webnicconfig"
+      subnet_id = azurerm_subnet.azlabelwebsubnet301.id
+      private_ip_address_allocation = "Dynamic"
+      public_ip_address_id = azurerm_public_ip.azlabelwebpublicip401[count.index].id
+    }
+}
+resource "azurerm_linux_virtual_machine" "azlabelwebserver401" {
+    count = var.vm_count
+    name = "${var.vm_name_pfx}-${count.index}-web"
+    resource_group_name = azurerm_resource_group.azlabelrg301.name
+    location = azurerm_resource_group.azlabelrg301.location
+    size = "Standard_F2"
+    admin_username = "adminuser"
+    admin_password = "password3898!"
+    disable_password_authentication = false
+    network_interface_ids = [ azurerm_network_interface.azlabelwebnic401[count.index].id, ]
+
+    os_disk {
+      caching = "ReadWrite"
+      storage_account_type = "Standard_LRS"
+
+    }
+
+    source_image_reference {
+      publisher = "Canonical"
+      offer = "UbuntuServer"
+      sku = "18.04-LTS"
+      version = "latest"
+    }
+  
+}
+resource "null_resource" "azurerm_null_dev" {
+  count = var.vm_count
+
+  triggers = {
+    id = azurerm_linux_virtual_machine.azlabelwebserver401[count.index].id
+  }
+  provisioner "remote-exec" {
+    inline = [
+      "sudo apt update",
+      "sudo apt install nginx -y"
+    ]
+    connection {
+      type = "ssh"
+      user = "adminuser"
+      password = "password3898!"
+      host = azurerm_linux_virtual_machine.azlabelwebserver401[count.index].public_ip_address 
+
+    }
+    
+  }
+   
+}
+#WebNSG
+resource "azurerm_network_security_group" "azweblabelnsg401" {
+  name = "azwebnsg398"
+  resource_group_name = azurerm_resource_group.azlabelrg301.name
+  location = azurerm_resource_group.azlabelrg301.location
+}
+resource "azurerm_network_security_rule" "azweblabelnsr401" {
+  name = "azwebnsr398"
+resource_group_name = azurerm_resource_group.azlabelrg301.name    
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+    network_security_group_name = azurerm_network_security_group.azweblabelnsg401.name
+}
+  
+ #Appservers.tf
+resource "azurerm_subnet" "azlabelappsubnet301" {
+    name = "appsubnet"
+    resource_group_name = azurerm_resource_group.azlabelrg301.name
+    virtual_network_name = azurerm_virtual_network.azlabelvnet301.name
+    address_prefixes = [ "10.60.2.0/24" ]
+  
+}
+resource "azurerm_public_ip" "azlabelapppublicip401" {
+    count = var.vm_count
+    name = "${var.vm_name_pfx}-${count.index}-app"
+    resource_group_name = azurerm_resource_group.azlabelrg301.name                          
+    location = azurerm_resource_group.azlabelrg301.location
+    allocation_method = "Static"
+   
+}
+resource "azurerm_network_interface" "azlabelappnic401" {
+    count = var.vm_count
+    name = "${var.vm_name_pfx}-${count.index}-nic1"
+    resource_group_name = azurerm_resource_group.azlabelrg301.name
+    location = azurerm_resource_group.azlabelrg301.location
+    ip_configuration {
+      name = "appnicconfig"
+      subnet_id = azurerm_subnet.azlabelappsubnet301.id
+      private_ip_address_allocation = "Dynamic"
+      public_ip_address_id = azurerm_public_ip.azlabelapppublicip401[count.index].id
+    }
+}
+resource "azurerm_linux_virtual_machine" "azlabelappserver401" {
+    count = var.vm_count
+    name = "${var.vm_name_pfx}-${count.index}-app"
+    resource_group_name = azurerm_resource_group.azlabelrg301.name
+    location = azurerm_resource_group.azlabelrg301.location
+    size = "Standard_F2"
+    admin_username = "adminuser"
+    admin_password = "password3898!"
+    disable_password_authentication = false
+    network_interface_ids = [ azurerm_network_interface.azlabelappnic401[count.index].id, ]
+
+    os_disk {
+      caching = "ReadWrite"
+      storage_account_type = "Standard_LRS"
+
+    }
+
+    source_image_reference {
+      publisher = "Canonical"
+      offer = "UbuntuServer"
+      sku = "18.04-LTS"
+      version = "latest"
+    }
+  
+}
+resource "null_resource" "azurerm_null_dev1" {
+  count = var.vm_count
+
+  triggers = {
+    id = azurerm_linux_virtual_machine.azlabelappserver401[count.index].id
+  }
+  provisioner "remote-exec" {
+    inline = [
+      "sudo apt update",
+      "sudo apt install default-jdk -y"
+    ]
+    connection {
+      type = "ssh"
+      user = "adminuser"
+      password = "password3898!"
+      host = azurerm_linux_virtual_machine.azlabelappserver401[count.index].public_ip_address 
+
+    }
+    
+  }
+   
+}
+#AppNSG
+resource "azurerm_network_security_group" "azapplabelnsg401" {
+  name = "azappnsg398"
+  resource_group_name = azurerm_resource_group.azlabelrg301.name
+  location = azurerm_resource_group.azlabelrg301.location
+}
+resource "azurerm_network_security_rule" "azapplabelnsr401" {
+  name = "azappnsr398"
+resource_group_name = azurerm_resource_group.azlabelrg301.name  
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+    network_security_group_name = azurerm_network_security_group.azapplabelnsg401.name
+}
+
+#DBserver.tf
+resource "azurerm_subnet" "azlabeldbsubnet301" {
+    name = "dbsubnet"
+    resource_group_name = azurerm_resource_group.azlabelrg301.name
+    virtual_network_name = azurerm_virtual_network.azlabelvnet301.name
+    address_prefixes = [ "10.60.3.0/24" ]
+  
+}
+resource "azurerm_public_ip" "azlabeldbpublicip401" {
+    count = var.vm_count
+    name = "${var.vm_name_pfx}-${count.index}-db"
+    resource_group_name = azurerm_resource_group.azlabelrg301.name                          
+    location = azurerm_resource_group.azlabelrg301.location
+    allocation_method = "Static"
+   
+}
+resource "azurerm_network_interface" "azlabeldbnic401" {
+    count = var.vm_count
+    name = "${var.vm_name_pfx}-${count.index}-nic3"
+    resource_group_name = azurerm_resource_group.azlabelrg301.name
+    location = azurerm_resource_group.azlabelrg301.location
+    ip_configuration {
+      name = "dbnicconfig"
+      subnet_id = azurerm_subnet.azlabeldbsubnet301.id
+      private_ip_address_allocation = "Dynamic"
+      public_ip_address_id = azurerm_public_ip.azlabeldbpublicip401[count.index].id
+    }
+}
+resource "azurerm_linux_virtual_machine" "azlabeldbserver401" {
+    count = var.vm_count
+    name = "${var.vm_name_pfx}-${count.index}-db"
+    resource_group_name = azurerm_resource_group.azlabelrg301.name
+    location = azurerm_resource_group.azlabelrg301.location
+    size = "Standard_F2"
+    admin_username = "adminuser"
+    admin_password = "password3898!"
+    disable_password_authentication = false
+    network_interface_ids = [ azurerm_network_interface.azlabeldbnic401[count.index].id, ]
+
+    os_disk {
+      caching = "ReadWrite"
+      storage_account_type = "Standard_LRS"
+
+    }
+
+    source_image_reference {
+      publisher = "Canonical"
+      offer = "UbuntuServer"
+      sku = "18.04-LTS"
+      version = "latest"
+    }
+  
+}
+resource "null_resource" "azurerm_null_dev3" {
+  count = var.vm_count
+
+  triggers = {
+    id = azurerm_linux_virtual_machine.azlabeldbserver401[count.index].id
+  }
+  provisioner "remote-exec" {
+    inline = [
+      "sudo apt update",
+      "sudo apt install mysql-server -y"
+    ]
+    connection {
+      type = "ssh"
+      user = "adminuser"
+      password = "password3898!"
+      host = azurerm_linux_virtual_machine.azlabeldbserver401[count.index].public_ip_address 
+
+    }
+    
+  }
+   
+}
+#DBNSG
+resource "azurerm_network_security_group" "azdblabelnsg401" {
+  name = "azdbnsg398"
+  resource_group_name = azurerm_resource_group.azlabelrg301.name
+  location = azurerm_resource_group.azlabelrg301.location
+}
+resource "azurerm_network_security_rule" "azdblabelnsr401" {
+  name = "azdbnsr398"
+resource_group_name = azurerm_resource_group.azlabelrg301.name  
+    priority                   = 120
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "162"
+    source_address_prefix      = "10.60.10.0/24"
+    destination_address_prefix = "*"
+    network_security_group_name = azurerm_network_security_group.azdblabelnsg401.name
+}
+
+#Webappmodule
+Main.tf
+terraform {
+  required_providers {
+     azurerm = {
+      source = "hashicorp/azurerm"
+      version = "3.49.0"
+   }
+  }
+}
+provider "azurerm" {
+    features {
+      
+    }
+    subscription_id = var.subscription_id
+    client_id = var.client_id
+    client_secret = var.client_secret
+    tenant_id = var.tenant_id
+
+}
+locals {
+  setup_name = "Rapido"
+}
+resource "azurerm_resource_group" "azwebrglabel001" {
+  name = "webapprg398"
+  location = "East US"
+  tags = {
+    name = "${local.setup_name}-rsg"
+  }
+  
+}
+resource "azurerm_service_plan" "azswebappplanlabel301" {
+  name = "webapp_plan398"
+  resource_group_name = azurerm_resource_group.azwebrglabel001.name
+  location = azurerm_resource_group.azwebrglabel001.location
+  os_type = "Linux"
+  sku_name = "S1"
+  depends_on = [
+    azurerm_resource_group.azwebrglabel001
+  ]
+  tags = {
+    "name" = "${local.setup_name}-appplan"
+  }
+    
+}
+resource "azurerm_linux_web_app" "azwebapplabel301" {
+  name = "webapp-test398"
+  resource_group_name = azurerm_resource_group.azwebrglabel001.name
+  location = azurerm_resource_group.azwebrglabel001.location
+  service_plan_id = azurerm_service_plan.azswebappplanlabel301.id
+  site_config {
+      
+  }
+  depends_on = [
+    azurerm_service_plan.azswebappplanlabel301
+  ]
+  tags = {
+    name = "${local.setup_name}_webapp" 
+  }
+
+}
+
+#Variables.tf
+variable "subscription_id" {
+    type = string
+    default = "****"
+    description = "prod subscription"
+  
+}
+variable "client_id" {
+    type = string
+    default = "***"
+    description = "prod client_id"
+  
+}
+variable "client_secret" {
+    type = string
+    default = "****"
+    description = "prod client_secret"
+  
+}
+variable "tenant_id" {
+    type = string
+    default = "****"
+    description = "prod tenant_id"
+
+  
+}
+
+#Main.tf
+module "module1" {
+    source = "./module1"
+  
+}
+module "webappmodule" {
+    source = "./webappmodule"
+}
+
+terraform {
+  backend "azurerm" {
+    resource_group_name = "azrg201"
+    storage_account_name = "azrgstrg201"
+    container_name = "***"
+    key = "terraform.***"
+    access_key = "****"
+    
+  }
+}
